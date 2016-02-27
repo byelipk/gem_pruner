@@ -1,44 +1,50 @@
 require "rubygems"
 require "rubygems/uninstaller"
 
-puts "Determining default gems..."
+REGEXP = /(?<name>[a-zA-Z0-9\-\_]+)\s(?<version>.+)/
+DRY_RUN = ARGV[0]
 
-# RVM's default gemset
-DEFAULT_GEMS = [
-  "bigdecimal",
-  "bundler", 
-  "bundler-unload", 
-  "executable-hooks", 
-  "gem-wrappers", 
-  "io-console", 
-  "json", 
-  "minitest", 
-  "psych", 
-  "rake", 
-  "rdoc", 
-  "rubygems-bundler", 
-  "rvm", 
-  "test-unit"
-]
+def gems_from_stream(data)
+  data.split(/\n/).map {|g| REGEXP.match(g)}
+end
+
+def names_for(gems)
+  gems.map {|g| g["name"]}
+end
+
+puts "Determining default gems..."
+file = File.open("default_list.txt", "r")
+DEFAULT_GEMS = names_for(gems_from_stream(file.read))
+file.close
 
 counter = 0
 
-`gem list > gems_to_uninstall.txt`
-File.open("gems_to_uninstall.txt", "r") do |f|
-  f.readlines.each do |line|
-    my_gem = line.chomp.split(/ /).first
-    next if DEFAULT_GEMS.include?(my_gem)
-    
+gems_from_stream(`gem list`).compact.each do |g|
+  name    = g["name"]
+  version = g["version"]
+  next if DEFAULT_GEMS.include?(name)
+
+  if DRY_RUN == "--dry-run"
+    puts "[DRY RUN] Uninstalled gem #{name} #{version}"
+  else
     begin
-      Gem::Uninstaller.new(my_gem, ignore: "-I" ).uninstall
-      puts "Uninstalled gem #{my_gem}!"
+      uninstaller = Gem::Uninstaller.new(
+        name,
+        ignore: "-I",
+        executables: true
+      )
+
+      uninstaller.uninstall
+
+      Gem.post_uninstall do
+        puts "Uninstalled gem #{name}"
+      end
       counter += 1
     rescue StandardError => e
-      puts "Could not uninstall #{my_gem}: #{e}"
+      puts "Could not uninstall #{name}: #{e}"
     end
   end
 end
-`rm -f gems_to_uninstall.txt`
 
-puts "Gem pruning complete!" 
+puts "Gem pruning complete!"
 puts "Total gems pruned: #{counter}"
